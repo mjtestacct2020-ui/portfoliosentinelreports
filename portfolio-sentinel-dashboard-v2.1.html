@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Sentinel Dashboard v2.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --neutral: #6b7280;
+        }
+        
+        .ticker-card {
+            transition: all 0.3s ease;
+        }
+        
+        .ticker-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .bullish { color: var(--success); }
+        .bearish { color: var(--danger); }
+        .neutral { color: var(--neutral); }
+        
+        .signal-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .signal-bullish {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+        
+        .signal-bearish {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .signal-neutral {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .heatmap-cell {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        
+        .heatmap-cell:hover {
+            transform: scale(1.05);
+            z-index: 10;
+        }
+        
+        .collapsed .card-body {
+            display: none;
+        }
+        
+        .expand-icon {
+            transition: transform 0.3s ease;
+        }
+        
+        .collapsed .expand-icon {
+            transform: rotate(-90deg);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Portfolio Sentinel <span class="text-sm text-blue-600 font-normal">v2.1</span></h1>
+                        <div class="flex items-center gap-2 mt-1">
+                            <p class="text-sm text-gray-500" id="lastUpdate">Last update: --</p>
+                            <span id="dataFreshness" class="hidden text-xs px-2 py-0.5 rounded-full"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3">
+                        <!-- Action Buttons -->
+                        <button id="btnClaudeAnalysis" class="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition">
+                            🤖 View Analysis Report
+                        </button>
+                        <button id="btnExport" class="px-4 py-2 bg-gray-800 text-white rounded-lg font-medium hover:bg-gray-900 transition">
+                            📊 Export to GitHub
+                        </button>
+                        <button id="btnGithubSettings" title="Configure your GitHub export settings" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition border border-gray-300">
+                            ⚙️
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- GitHub Settings Modal -->
+        <div id="githubSettingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900">⚙️ GitHub Export Settings</h3>
+                        <p class="text-sm text-gray-500 mt-1">Stored only in your browser — never sent anywhere except GitHub when you export.</p>
+                    </div>
+                    <button id="btnCloseGithubSettings" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">GitHub Repo</label>
+                        <input type="text" id="ghRepoInput" placeholder="yourusername/your-repo"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <p class="text-xs text-gray-400 mt-1">Format: username/repo-name (must already exist on GitHub)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+                        <input type="text" id="ghBranchInput" placeholder="main" value="main"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Reports Folder Path</label>
+                        <input type="text" id="ghPathInput" placeholder="reports" value="reports"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Personal Access Token</label>
+                        <form autocomplete="on" onsubmit="return false;">
+                            <input type="password" id="ghTokenInput" name="github-pat" placeholder="ghp_..." autocomplete="current-password"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </form>
+                        <p class="text-xs text-gray-400 mt-1">
+                            Fine-grained token scoped to just this repo, with Contents: Read/Write.
+                            <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" class="text-blue-600 hover:underline">Create one on GitHub →</a>
+                        </p>
+                    </div>
+
+                    <div id="ghSettingsStatus" class="hidden text-sm p-3 rounded-lg"></div>
+
+                    <div class="flex gap-3 pt-2">
+                        <button id="btnSaveGithubSettings" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition">
+                            Save Settings
+                        </button>
+                        <button id="btnClearGithubSettings" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 transition border border-red-200">
+                            Clear
+                        </button>
+                    </div>
+
+                    <p class="text-xs text-gray-400 border-t border-gray-100 pt-3 mt-2">
+                        These settings are saved in this browser's local storage only. They are never embedded in
+                        exported HTML files and are not visible to anyone else using this same dashboard on their
+                        own device — each person who opens this page configures their own repo and token.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Upload Zone (Mode 1) -->
+            <div id="uploadZone" class="mb-8">
+                <div class="bg-white rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+                    <div class="mb-4">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Drop ticker JSON files here</h3>
+                    <p class="text-sm text-gray-500 mb-4">Or click to browse files</p>
+                    <input type="file" id="fileInput" multiple accept=".json" class="hidden">
+                    <button id="btnBrowse" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                        Browse Files
+                    </button>
+                    <div id="uploadedFiles" class="mt-4 text-sm text-gray-600"></div>
+                </div>
+            </div>
+
+            <!-- Market Context Overview -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Market Context</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div id="spyCard" class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">SPY</div>
+                        <div class="text-2xl font-bold">--</div>
+                        <div class="text-sm mt-1">--</div>
+                    </div>
+                    <div id="qqqCard" class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">QQQ</div>
+                        <div class="text-2xl font-bold">--</div>
+                        <div class="text-sm mt-1">--</div>
+                    </div>
+                    <div id="iwmCard" class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">IWM</div>
+                        <div class="text-2xl font-bold">--</div>
+                        <div class="text-sm mt-1">--</div>
+                    </div>
+                    <div id="vixCard" class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">VIX</div>
+                        <div class="text-2xl font-bold">--</div>
+                        <div class="text-sm mt-1">--</div>
+                    </div>
+                </div>
+                <div id="marketEnvironment" class="mt-4 p-4 bg-blue-50 rounded-lg">
+                    <span class="font-semibold">Market Environment:</span> <span id="envStatus">Analyzing...</span>
+                </div>
+                
+                <!-- Claude Analysis Panel -->
+                <div id="claudeAnalysisPanel" class="hidden mt-4 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border-2 border-purple-200">
+                    <div class="flex items-start justify-between mb-4">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">🤖 Claude's Portfolio Analysis</h3>
+                            <p class="text-sm text-gray-600 mt-1" id="analysisTimestamp">Generated: --</p>
+                        </div>
+                        <button id="btnCloseAnalysis" class="text-gray-500 hover:text-gray-700">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="claudeAnalysisContent" class="prose max-w-none">
+                        <div class="flex items-center justify-center py-8">
+                            <div class="loading-spinner mr-3"></div>
+                            <span class="text-gray-600">Analyzing your uploaded portfolio data...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Heatmap -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Portfolio Heatmap</h2>
+                <div id="heatmap" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="hidden flex items-center justify-center py-12">
+                <div class="loading-spinner"></div>
+                <span class="ml-3 text-gray-600">Loading market data...</span>
+            </div>
+
+            <!-- Ticker Cards -->
+            <div id="tickerCards" class="space-y-4">
+                <!-- Will be populated dynamically -->
+            </div>
+
+            <!-- Technical Analysis Deep Dive (appears when ticker selected) -->
+            <div id="taDeepDive" class="hidden bg-white rounded-lg shadow-sm p-6 mt-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Technical Analysis: <span id="taSymbol"></span></h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-semibold text-gray-700 mb-3">Multi-Timeframe Performance</h3>
+                        <div style="height: 200px; max-height: 200px;">
+                            <canvas id="chartMultiTF"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-700 mb-3">Signal Summary</h3>
+                        <div id="signalSummary" class="space-y-2">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            portfolio_tickers: ["AMT","AMZN","AXSM","CAPR","CRSP","GIL","GOOG","IOVA","IQV","M",
+                "PYPL","ROKU","SFL","SHOP","XYZ","MCD","NTDOY","AQST","PANW","CRWD","MLTX"],
+            context_tickers: ["SPY","QQQ","IWM","VIX"],
+            // GitHub export settings are NOT stored here.
+            // Each user configures their own repo/branch/path/token via the
+            // ⚙️ Settings button, saved to their own browser's localStorage only.
+            // See getGithubConfig() / saveGithubConfig() below.
+            metadata: {
+                "AXSM": {"sector": "Biotech", "biotech": true},
+                "CAPR": {"sector": "Biotech", "biotech": true},
+                "CRSP": {"sector": "Biotech", "biotech": true},
+                "IOVA": {"sector": "Biotech", "biotech": true},
+                "AQST": {"sector": "Biotech", "biotech": true},
+                "MLTX": {"sector": "Biotech", "biotech": true},
+                "SFL": {"sector": "Marine/Leasing", "dividends": true},
+                "AMT": {"sector": "REIT"},
+                "AMZN": {"sector": "Consumer/Cloud"},
+                "GOOG": {"sector": "Tech/AI"},
+                "IQV": {"sector": "Healthcare Services"},
+                "M": {"sector": "Retail"},
+                "PYPL": {"sector": "Fintech"},
+                "ROKU": {"sector": "Media/Devices"},
+                "SHOP": {"sector": "E-commerce"},
+                "MCD": {"sector": "Restaurants"},
+                "GIL": {"sector": "Apparel"},
+                "PANW": {"sector": "Tech/AI"},
+                "CRWD": {"sector": "Tech/AI"}
+            }
+        };
+
+        // State
+        let tickerData = {};
+        let uploadedJSONs = {};
+
+        // DOM Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const btnBrowse = document.getElementById('btnBrowse');
+        const btnExport = document.getElementById('btnExport');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // GitHub Settings DOM Elements
+        const btnGithubSettings = document.getElementById('btnGithubSettings');
+        const btnCloseGithubSettings = document.getElementById('btnCloseGithubSettings');
+        const githubSettingsModal = document.getElementById('githubSettingsModal');
+        const ghRepoInput = document.getElementById('ghRepoInput');
+        const ghBranchInput = document.getElementById('ghBranchInput');
+        const ghPathInput = document.getElementById('ghPathInput');
+        const ghTokenInput = document.getElementById('ghTokenInput');
+        const ghSettingsStatus = document.getElementById('ghSettingsStatus');
+        const btnSaveGithubSettings = document.getElementById('btnSaveGithubSettings');
+        const btnClearGithubSettings = document.getElementById('btnClearGithubSettings');
+
+        const GITHUB_CONFIG_STORAGE_KEY = 'portfolioSentinelGithubConfig';
+
+        // Load this browser's saved GitHub config (or null if never configured)
+        function getGithubConfig() {
+            try {
+                const raw = localStorage.getItem(GITHUB_CONFIG_STORAGE_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (!parsed.repo || !parsed.token) return null;
+                return {
+                    repo: parsed.repo,
+                    branch: parsed.branch || 'main',
+                    path: parsed.path || 'reports',
+                    token: parsed.token
+                };
+            } catch (err) {
+                console.error('Failed to read saved GitHub config:', err);
+                return null;
+            }
+        }
+
+        // Save this browser's GitHub config (repo/branch/path/token never leave this device
+        // except in the actual GitHub API calls the user triggers themselves)
+        function saveGithubConfig(config) {
+            try {
+                localStorage.setItem(GITHUB_CONFIG_STORAGE_KEY, JSON.stringify(config));
+                return true;
+            } catch (err) {
+                console.error('Failed to save GitHub config:', err);
+                return false;
+            }
+        }
+
+        function clearGithubConfig() {
+            localStorage.removeItem(GITHUB_CONFIG_STORAGE_KEY);
+        }
+
+        function showGithubSettingsStatus(message, isError) {
+            ghSettingsStatus.classList.remove('hidden', 'bg-green-50', 'text-green-700', 'bg-red-50', 'text-red-700');
+            ghSettingsStatus.classList.add(isError ? 'bg-red-50' : 'bg-green-50', isError ? 'text-red-700' : 'text-green-700');
+            ghSettingsStatus.textContent = message;
+        }
+
+        function openGithubSettingsModal() {
+            const existing = getGithubConfig();
+            if (existing) {
+                ghRepoInput.value = existing.repo;
+                ghBranchInput.value = existing.branch;
+                ghPathInput.value = existing.path;
+                ghTokenInput.value = existing.token;
+            }
+            ghSettingsStatus.classList.add('hidden');
+            githubSettingsModal.classList.remove('hidden');
+        }
+
+        function closeGithubSettingsModal() {
+            githubSettingsModal.classList.add('hidden');
+        }
+
+        btnGithubSettings.addEventListener('click', openGithubSettingsModal);
+        btnCloseGithubSettings.addEventListener('click', closeGithubSettingsModal);
+        githubSettingsModal.addEventListener('click', (e) => {
+            if (e.target === githubSettingsModal) closeGithubSettingsModal();
+        });
+
+        btnSaveGithubSettings.addEventListener('click', () => {
+            const repo = ghRepoInput.value.trim();
+            const branch = ghBranchInput.value.trim() || 'main';
+            const path = ghPathInput.value.trim() || 'reports';
+            const token = ghTokenInput.value.trim();
+
+            if (!repo || !repo.includes('/')) {
+                showGithubSettingsStatus('Repo must be in the format username/repo-name.', true);
+                return;
+            }
+            if (!token) {
+                showGithubSettingsStatus('A personal access token is required to export.', true);
+                return;
+            }
+
+            const saved = saveGithubConfig({ repo, branch, path, token });
+            if (saved) {
+                showGithubSettingsStatus('✓ Saved. These settings are stored only in this browser.', false);
+            } else {
+                showGithubSettingsStatus('Could not save settings — your browser may be blocking local storage.', true);
+            }
+        });
+
+        btnClearGithubSettings.addEventListener('click', () => {
+            clearGithubConfig();
+            ghRepoInput.value = '';
+            ghBranchInput.value = 'main';
+            ghPathInput.value = 'reports';
+            ghTokenInput.value = '';
+            showGithubSettingsStatus('Settings cleared from this browser.', false);
+        });
+
+        // File Upload Handling
+        btnBrowse.addEventListener('click', () => fileInput.click());
+        
+        fileInput.addEventListener('change', handleFileUpload);
+        
+        // Drag and drop
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('border-blue-500', 'bg-blue-50');
+        });
+        
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('border-blue-500', 'bg-blue-50');
+        });
+        
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('border-blue-500', 'bg-blue-50');
+            fileInput.files = e.dataTransfer.files;
+            handleFileUpload({ target: fileInput });
+        });
+
+        async function handleFileUpload(e) {
+            const files = Array.from(e.target.files);
+            const uploadedFilesDiv = document.getElementById('uploadedFiles');
+            uploadedFilesDiv.innerHTML = `<p class="text-green-600">✓ Uploaded ${files.length} file(s)</p>`;
+            
+            for (const file of files) {
+                try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    // Extract ticker symbol from filename: "finnhub_TICKER_timestamp.json"
+                    let ticker = file.name.replace('.json', '');
+                    if (ticker.startsWith('finnhub_')) {
+                        ticker = ticker.split('_')[1]; // Get TICKER part
+                    }
+                    ticker = ticker.toUpperCase();
+                    uploadedJSONs[ticker] = data;
+                } catch (err) {
+                    console.error(`Error parsing ${file.name}:`, err);
+                }
+            }
+            
+            processUploadedData();
+        }
+
+        function processUploadedData() {
+            // Process uploaded JSONs and populate dashboard
+            tickerData = {};
+            let oldestTimestamp = null;
+            
+            for (const [ticker, data] of Object.entries(uploadedJSONs)) {
+                const parsed = parseTickerJSON(data);
+                tickerData[ticker] = parsed;
+                
+                // Track oldest timestamp
+                if (parsed.timestamp) {
+                    const ts = new Date(parsed.timestamp);
+                    if (!oldestTimestamp || ts < oldestTimestamp) {
+                        oldestTimestamp = ts;
+                    }
+                }
+            }
+            
+            updateDashboard();
+            updateDataFreshness(oldestTimestamp);
+        }
+
+        // Calculate Fibonacci retracement levels from price data
+        function calculateFibonacciLevels(closes, highs, lows, lookbackPeriod) {
+            if (!highs || !lows || highs.length < lookbackPeriod) {
+                return null;
+            }
+            
+            // Get the slice of data for the lookback period
+            const recentHighs = highs.slice(-lookbackPeriod);
+            const recentLows = lows.slice(-lookbackPeriod);
+            
+            // Find swing high and low
+            const swingHigh = Math.max(...recentHighs);
+            const swingLow = Math.min(...recentLows);
+            const range = swingHigh - swingLow;
+            
+            if (range === 0) return null;
+            
+            // Calculate Fibonacci retracement levels
+            return {
+                high: swingHigh,
+                fib236: swingHigh - (range * 0.236),
+                fib382: swingHigh - (range * 0.382),
+                fib500: swingHigh - (range * 0.500),
+                fib618: swingHigh - (range * 0.618),
+                fib786: swingHigh - (range * 0.786),
+                low: swingLow,
+                range: range
+            };
+        }
+
+        function parseTickerJSON(data) {
+            // Parse Finnhub JSON format (nested structure)
+            const quote = data.quote || {};
+            const profile = data.profile2 || {};
+            const metrics = data.metric_all?.metric || {};
+            const news = data.news || data.company_news_45d || [];
+            const earnings = data.earnings || [];
+            const peers = data.peers || [];
+            const recommendations = data.recommendation_trends || [];
+            const candles = data.candles_6m_daily || {};
+            
+            // Extract ticker from profile or filename
+            const symbol = profile.ticker || data.symbol;
+            
+            // Calculate average volume from metrics
+            const avgVolume = metrics['3MonthAverageTradingVolume'] 
+                ? metrics['3MonthAverageTradingVolume'] * 1000000 
+                : null;
+            
+            // Calculate technical indicators from Yahoo Finance candle data
+            let sma20 = null, sma50 = null, sma200 = null, rsi = null;
+            let currentVolume = null;
+            let fibLevels3M = null, fibLevels6M = null;
+            
+            if (candles.c && candles.c.length > 0) {
+                const closes = candles.c;
+                const highs = candles.h || [];
+                const lows = candles.l || [];
+                const volumes = candles.v || [];
+                const latestIdx = closes.length - 1;
+                
+                // Get current volume
+                if (volumes.length > 0) {
+                    currentVolume = volumes[latestIdx];
+                }
+                
+                // Calculate SMAs
+                if (closes.length >= 20) {
+                    sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+                }
+                if (closes.length >= 50) {
+                    sma50 = closes.slice(-50).reduce((a, b) => a + b, 0) / 50;
+                }
+                if (closes.length >= 200) {
+                    // We only have 6 months (~124 days), so use what we have
+                    const availableDays = Math.min(closes.length, 200);
+                    sma200 = closes.slice(-availableDays).reduce((a, b) => a + b, 0) / availableDays;
+                }
+                
+                // Calculate RSI (14-period)
+                if (closes.length >= 15) {
+                    const period = 14;
+                    let gains = 0, losses = 0;
+                    
+                    for (let i = closes.length - period; i < closes.length; i++) {
+                        const change = closes[i] - closes[i - 1];
+                        if (change > 0) gains += change;
+                        else losses += Math.abs(change);
+                    }
+                    
+                    const avgGain = gains / period;
+                    const avgLoss = losses / period;
+                    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                    rsi = 100 - (100 / (1 + rs));
+                }
+                
+                // Calculate Fibonacci retracement levels
+                // Use 3-month and 6-month swing highs/lows
+                fibLevels3M = calculateFibonacciLevels(closes, highs, lows, 63); // ~3 months
+                fibLevels6M = calculateFibonacciLevels(closes, highs, lows, Math.min(closes.length, 126)); // ~6 months
+            }
+            
+            return {
+                symbol: symbol,
+                price: quote.c,
+                change: quote.d,
+                changePercent: quote.dp,
+                volume: currentVolume,
+                avgVolume: avgVolume,
+                high: quote.h,
+                low: quote.l,
+                open: quote.o,
+                previousClose: quote.pc,
+                
+                // Company info
+                companyName: profile.name,
+                sector: profile.finnhubIndustry,
+                marketCap: profile.marketCapitalization,
+                
+                // Technical indicators from metrics
+                week52High: metrics['52WeekHigh'],
+                week52Low: metrics['52WeekLow'],
+                beta: metrics.beta,
+                
+                // Performance metrics
+                return1D: metrics['5DayPriceReturnDaily'],
+                return5D: metrics['5DayPriceReturnDaily'],
+                return1M: metrics.monthToDatePriceReturnDaily,
+                return3M: metrics['13WeekPriceReturnDaily'],
+                return6M: metrics['26WeekPriceReturnDaily'],
+                return1Y: metrics['52WeekPriceReturnDaily'],
+                
+                // Fundamental metrics
+                pe: metrics.peTTM,
+                eps: metrics.epsTTM,
+                dividendYield: metrics.currentDividendYieldTTM,
+                roe: metrics.roeTTM,
+                profitMargin: metrics.netProfitMarginTTM,
+                
+                // Calculated technical indicators from Yahoo Finance data
+                sma20: sma20,
+                sma50: sma50,
+                sma200: sma200,
+                rsi: rsi,
+                
+                // Fibonacci retracement levels
+                fib3M: fibLevels3M,
+                fib6M: fibLevels6M,
+                
+                // Historical data
+                candles: candles,
+                hasHistoricalData: candles.c && candles.c.length > 0,
+                
+                // News and analyst data
+                news: news.slice(0, 5), // Top 5 news items
+                earnings: earnings.slice(0, 4), // Last 4 quarters
+                peers: peers,
+                recommendations: recommendations[0] || null, // Latest month
+                
+                // Parsed timestamp
+                timestamp: data.run_timestamp
+            };
+        }
+
+        // Dashboard Update Function
+        function updateDashboard() {
+            updateLastUpdateTime();
+            updateMarketContext();
+            updateHeatmap();
+            updateTickerCards();
+        }
+
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('en-US', { 
+                timeZone: 'America/New_York',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+            document.getElementById('lastUpdate').textContent = `Last update: ${timeStr} ET`;
+        }
+
+        function updateMarketContext() {
+            // Update SPY, QQQ, IWM, VIX cards
+            const indices = ['SPY', 'QQQ', 'IWM', 'VIX'];
+            
+            indices.forEach(symbol => {
+                const data = tickerData[symbol];
+                const card = document.getElementById(`${symbol.toLowerCase()}Card`);
+                
+                if (data && card) {
+                    const priceDiv = card.querySelector('.text-2xl');
+                    const changeDiv = card.querySelector('.text-sm.mt-1');
+                    
+                    priceDiv.textContent = `$${data.price?.toFixed(2) || '--'}`;
+                    
+                    const changePct = data.changePct || 0;
+                    const color = changePct >= 0 ? 'text-green-600' : 'text-red-600';
+                    changeDiv.className = `text-sm mt-1 font-semibold ${color}`;
+                    changeDiv.textContent = `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`;
+                }
+            });
+            
+            // Determine market environment
+            const spy = tickerData['SPY'];
+            const vix = tickerData['VIX'];
+            const envDiv = document.getElementById('envStatus');
+            
+            if (spy && vix) {
+                let environment = '';
+                if (vix.price < 15 && spy.changePct > 0) {
+                    environment = '🟢 Risk-On (Low VIX, positive momentum)';
+                    envDiv.parentElement.className = 'mt-4 p-4 bg-green-50 rounded-lg';
+                } else if (vix.price > 25 || spy.changePct < -1) {
+                    environment = '🔴 Risk-Off (Elevated VIX, negative momentum)';
+                    envDiv.parentElement.className = 'mt-4 p-4 bg-red-50 rounded-lg';
+                } else {
+                    environment = '🟡 Neutral (Mixed signals)';
+                    envDiv.parentElement.className = 'mt-4 p-4 bg-yellow-50 rounded-lg';
+                }
+                envDiv.textContent = environment;
+            }
+        }
+
+        function updateHeatmap() {
+            const heatmap = document.getElementById('heatmap');
+            heatmap.innerHTML = '';
+            
+            CONFIG.portfolio_tickers.forEach(ticker => {
+                const data = tickerData[ticker];
+                const changePct = data?.changePct || 0;
+                
+                // Color based on change percentage
+                let bgColor = 'bg-gray-200';
+                if (changePct > 3) bgColor = 'bg-green-500';
+                else if (changePct > 1) bgColor = 'bg-green-400';
+                else if (changePct > 0) bgColor = 'bg-green-200';
+                else if (changePct < -3) bgColor = 'bg-red-500';
+                else if (changePct < -1) bgColor = 'bg-red-400';
+                else if (changePct < 0) bgColor = 'bg-red-200';
+                
+                const cell = document.createElement('div');
+                cell.className = `heatmap-cell ${bgColor} rounded-lg p-3 text-center`;
+                cell.innerHTML = `
+                    <div class="font-bold text-xs text-gray-900">${ticker}</div>
+                    <div class="text-xs font-semibold mt-1 ${changePct >= 0 ? 'text-green-900' : 'text-red-900'}">
+                        ${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%
+                    </div>
+                `;
+                cell.addEventListener('click', () => showTADeepDive(ticker));
+                heatmap.appendChild(cell);
+            });
+        }
+
+        function updateTickerCards() {
+            const container = document.getElementById('tickerCards');
+            container.innerHTML = '';
+            
+            CONFIG.portfolio_tickers.forEach(ticker => {
+                const data = tickerData[ticker] || {};
+                const metadata = CONFIG.metadata[ticker] || {};
+                
+                const card = createTickerCard(ticker, data, metadata);
+                container.appendChild(card);
+            });
+        }
+
+        function createTickerCard(ticker, data, metadata) {
+            const div = document.createElement('div');
+            div.className = 'ticker-card bg-white rounded-lg shadow-sm border border-gray-200';
+            
+            const changePct = data.changePct || 0;
+            const changeColor = changePct >= 0 ? 'text-green-600' : 'text-red-600';
+            
+            // Calculate simple TA signals
+            const signals = calculateSignals(data);
+            
+            div.innerHTML = `
+                <div class="p-6 cursor-pointer" onclick="toggleCard(this)">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-lg font-bold text-gray-900">${ticker}</h3>
+                                <span class="text-xs text-gray-500">${metadata.sector || ''}</span>
+                                ${metadata.biotech ? '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">Biotech</span>' : ''}
+                            </div>
+                            <div class="mt-2 flex items-baseline gap-3">
+                                <span class="text-2xl font-bold text-gray-900">$${data.price?.toFixed(2) || '--'}</span>
+                                <span class="${changeColor} font-semibold">
+                                    ${changePct >= 0 ? '+' : ''}${data.change?.toFixed(2) || '--'} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-sm text-gray-500">Volume</div>
+                            <div class="text-sm font-semibold">${formatVolume(data.volume)}</div>
+                            <svg class="expand-icon w-5 h-5 text-gray-400 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card-body px-6 pb-6 border-t border-gray-100 pt-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <div class="text-xs text-gray-500">Open</div>
+                            <div class="text-sm font-semibold">$${data.open?.toFixed(2) || '--'}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">High</div>
+                            <div class="text-sm font-semibold">$${data.high?.toFixed(2) || '--'}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Low</div>
+                            <div class="text-sm font-semibold">$${data.low?.toFixed(2) || '--'}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Prev Close</div>
+                            <div class="text-sm font-semibold">$${data.previousClose?.toFixed(2) || '--'}</div>
+                        </div>
+                    </div>
+                    
+                    ${data.week52High ? `
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <div class="text-xs text-gray-500">52W High</div>
+                            <div class="text-sm font-semibold text-green-600">$${data.week52High?.toFixed(2)}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">52W Low</div>
+                            <div class="text-sm font-semibold text-red-600">$${data.week52Low?.toFixed(2)}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">P/E Ratio</div>
+                            <div class="text-sm font-semibold">${data.pe?.toFixed(2) || '--'}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Div Yield</div>
+                            <div class="text-sm font-semibold">${data.dividendYield?.toFixed(2) || '0.00'}%</div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.sma20 || data.sma50 || data.sma200 ? `
+                    <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+                        <h4 class="text-xs font-semibold text-gray-700 mb-2">Moving Averages (from Yahoo Finance data)</h4>
+                        <div class="grid grid-cols-3 gap-3 text-xs">
+                            ${data.sma20 ? `
+                            <div>
+                                <div class="text-gray-500">20-day SMA</div>
+                                <div class="font-semibold ${data.price > data.sma20 ? 'text-green-600' : 'text-red-600'}">
+                                    $${data.sma20.toFixed(2)}
+                                </div>
+                            </div>
+                            ` : ''}
+                            ${data.sma50 ? `
+                            <div>
+                                <div class="text-gray-500">50-day SMA</div>
+                                <div class="font-semibold ${data.price > data.sma50 ? 'text-green-600' : 'text-red-600'}">
+                                    $${data.sma50.toFixed(2)}
+                                </div>
+                            </div>
+                            ` : ''}
+                            ${data.sma200 ? `
+                            <div>
+                                <div class="text-gray-500">200-day SMA</div>
+                                <div class="font-semibold ${data.price > data.sma200 ? 'text-green-600' : 'text-red-600'}">
+                                    $${data.sma200.toFixed(2)}
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.fib3M ? `
+                    <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 class="text-xs font-semibold text-blue-900 mb-2">📊 Fibonacci Levels (3-Month Swing)</h4>
+                        <div class="text-xs space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600">Current Price:</span>
+                                <span class="font-bold text-blue-700">$${data.price?.toFixed(2)}</span>
+                            </div>
+                            <div class="h-px bg-blue-200 my-2"></div>
+                            <div class="flex justify-between items-center ${data.price >= data.fib3M.high ? 'bg-green-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">Swing High (0%):</span>
+                                <span class="font-semibold text-green-700">$${data.fib3M.high.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.fib236 && data.price >= data.fib3M.fib382 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">23.6% Fib:</span>
+                                <span class="font-semibold">$${data.fib3M.fib236.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.fib382 && data.price >= data.fib3M.fib500 ? 'bg-yellow-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">38.2% Fib:</span>
+                                <span class="font-semibold">$${data.fib3M.fib382.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.fib500 && data.price >= data.fib3M.fib618 ? 'bg-orange-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">50.0% Fib:</span>
+                                <span class="font-semibold">$${data.fib3M.fib500.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.fib618 && data.price >= data.fib3M.fib786 ? 'bg-orange-200 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">61.8% Fib (Golden):</span>
+                                <span class="font-semibold text-orange-700">$${data.fib3M.fib618.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.fib786 && data.price >= data.fib3M.low ? 'bg-red-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">78.6% Fib:</span>
+                                <span class="font-semibold">$${data.fib3M.fib786.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center ${data.price <= data.fib3M.low ? 'bg-red-100 px-2 py-1 rounded' : ''}">
+                                <span class="text-gray-600">Swing Low (100%):</span>
+                                <span class="font-semibold text-red-700">$${data.fib3M.low.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.return1Y !== undefined ? `
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Performance</h4>
+                        <div class="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">1M</div>
+                                <div class="font-semibold ${data.return1M >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                    ${data.return1M?.toFixed(1) || '--'}%
+                                </div>
+                            </div>
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">3M</div>
+                                <div class="font-semibold ${data.return3M >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                    ${data.return3M?.toFixed(1) || '--'}%
+                                </div>
+                            </div>
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">6M</div>
+                                <div class="font-semibold ${data.return6M >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                    ${data.return6M?.toFixed(1) || '--'}%
+                                </div>
+                            </div>
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">1Y</div>
+                                <div class="font-semibold ${data.return1Y >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                    ${data.return1Y?.toFixed(1) || '--'}%
+                                </div>
+                            </div>
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">Beta</div>
+                                <div class="font-semibold">${data.beta?.toFixed(2) || '--'}</div>
+                            </div>
+                            <div class="text-center p-2 bg-gray-50 rounded">
+                                <div class="text-gray-500">ROE</div>
+                                <div class="font-semibold">${data.roe?.toFixed(1) || '--'}%</div>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.recommendations ? `
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Analyst Consensus (${data.recommendations.period})</h4>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded">Buy: ${data.recommendations.strongBuy + data.recommendations.buy}</span>
+                            <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded">Hold: ${data.recommendations.hold}</span>
+                            <span class="px-2 py-1 bg-red-100 text-red-700 rounded">Sell: ${data.recommendations.sell + data.recommendations.strongSell}</span>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.news && data.news.length > 0 ? `
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Recent News</h4>
+                        <div class="space-y-2">
+                            ${data.news.slice(0, 3).map(n => `
+                                <div class="text-xs p-2 bg-gray-50 rounded">
+                                    <a href="${n.url}" target="_blank" class="text-blue-600 hover:underline font-medium">
+                                        ${n.headline}
+                                    </a>
+                                    <div class="text-gray-500 mt-1">${n.source} • ${new Date(n.datetime * 1000).toLocaleDateString()}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Technical Signals</h4>
+                        <div class="flex flex-wrap gap-2">
+                            ${signals.map(s => `<span class="signal-badge signal-${s.type}">${s.label}</span>`).join('')}
+                        </div>
+                    </div>
+                    
+                    <button onclick="showTADeepDive('${ticker}')" class="w-full px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition font-medium">
+                        📊 View Full Technical Analysis
+                    </button>
+                </div>
+            `;
+            
+            return div;
+        }
+
+        function toggleCard(element) {
+            const card = element.closest('.ticker-card');
+            card.classList.toggle('collapsed');
+        }
+
+        function calculateSignals(data) {
+            const signals = [];
+            
+            if (!data.price) return [{ type: 'neutral', label: 'No data available' }];
+            
+            // SMA crossover signals (Golden Cross / Death Cross)
+            if (data.sma50 && data.sma200) {
+                if (data.sma50 > data.sma200 && data.price > data.sma50) {
+                    signals.push({ type: 'bullish', label: 'Golden Cross + Price Above 50 SMA' });
+                } else if (data.sma50 < data.sma200 && data.price < data.sma50) {
+                    signals.push({ type: 'bearish', label: 'Death Cross + Price Below 50 SMA' });
+                }
+                
+                // Price vs SMAs
+                if (data.price > data.sma200) {
+                    signals.push({ type: 'bullish', label: 'Above 200-day SMA' });
+                } else if (data.price < data.sma200) {
+                    signals.push({ type: 'bearish', label: 'Below 200-day SMA' });
+                }
+            }
+            
+            // 52-week range signal
+            if (data.week52High && data.week52Low) {
+                const priceRange = (data.price - data.week52Low) / (data.week52High - data.week52Low);
+                if (priceRange > 0.9) {
+                    signals.push({ type: 'bullish', label: 'Near 52W High' });
+                } else if (priceRange < 0.1) {
+                    signals.push({ type: 'bearish', label: 'Near 52W Low' });
+                }
+            }
+            
+            // RSI signals (real calculated RSI from Yahoo data)
+            if (data.rsi !== null && data.rsi !== undefined) {
+                if (data.rsi > 70) {
+                    signals.push({ type: 'bearish', label: `RSI Overbought (${data.rsi.toFixed(0)})` });
+                } else if (data.rsi < 30) {
+                    signals.push({ type: 'bullish', label: `RSI Oversold (${data.rsi.toFixed(0)})` });
+                } else if (data.rsi > 50) {
+                    signals.push({ type: 'neutral', label: `RSI Bullish (${data.rsi.toFixed(0)})` });
+                } else {
+                    signals.push({ type: 'neutral', label: `RSI Bearish (${data.rsi.toFixed(0)})` });
+                }
+            }
+            
+            // Volume signal
+            if (data.volume && data.avgVolume && data.volume > data.avgVolume * 2) {
+                signals.push({ type: 'bullish', label: 'High Volume Spike (2x avg)' });
+            }
+            
+            // Momentum signals from returns
+            if (data.return3M !== undefined) {
+                if (data.return3M > 15) {
+                    signals.push({ type: 'bullish', label: `Strong 3M Rally (+${data.return3M.toFixed(1)}%)` });
+                } else if (data.return3M < -15) {
+                    signals.push({ type: 'bearish', label: `Weak 3M Trend (${data.return3M.toFixed(1)}%)` });
+                }
+            }
+            
+            // Analyst consensus signal
+            if (data.recommendations) {
+                const totalRatings = data.recommendations.strongBuy + data.recommendations.buy + 
+                                    data.recommendations.hold + data.recommendations.sell + 
+                                    data.recommendations.strongSell;
+                const bullishRatings = data.recommendations.strongBuy + data.recommendations.buy;
+                const bullishPct = (bullishRatings / totalRatings) * 100;
+                
+                if (bullishPct > 70) {
+                    signals.push({ type: 'bullish', label: `Strong Buy Rating (${bullishPct.toFixed(0)}%)` });
+                } else if (bullishPct < 30) {
+                    signals.push({ type: 'bearish', label: `Weak Rating (${bullishPct.toFixed(0)}% buy)` });
+                }
+            }
+            
+            // Valuation signal (P/E)
+            if (data.pe) {
+                if (data.pe < 15) {
+                    signals.push({ type: 'bullish', label: `Low P/E (${data.pe.toFixed(1)})` });
+                } else if (data.pe > 40) {
+                    signals.push({ type: 'neutral', label: `High P/E (${data.pe.toFixed(1)})` });
+                }
+            }
+            
+            // Dividend signal
+            if (data.dividendYield && data.dividendYield > 3) {
+                signals.push({ type: 'bullish', label: `High Yield (${data.dividendYield.toFixed(2)}%)` });
+            }
+            
+            // Fibonacci retracement signals
+            if (data.fib3M && data.price) {
+                const price = data.price;
+                const fib = data.fib3M;
+                
+                // Check if price is near key Fibonacci levels (within 1%)
+                const tolerance = fib.range * 0.01;
+                
+                if (Math.abs(price - fib.fib618) < tolerance) {
+                    signals.push({ type: 'bullish', label: 'At 61.8% Fib (Golden Ratio Support)' });
+                } else if (Math.abs(price - fib.fib500) < tolerance) {
+                    signals.push({ type: 'neutral', label: 'At 50% Fib (Mid-Range)' });
+                } else if (Math.abs(price - fib.fib382) < tolerance) {
+                    signals.push({ type: 'neutral', label: 'At 38.2% Fib Level' });
+                }
+                
+                // Holding above key support levels
+                if (price >= fib.fib618 && price < fib.fib500) {
+                    signals.push({ type: 'bullish', label: 'Holding Above Golden Fib (61.8%)' });
+                } else if (price < fib.fib786) {
+                    signals.push({ type: 'bearish', label: 'Below 78.6% Fib (Weak Support)' });
+                }
+                
+                // Near extremes
+                if (price >= fib.high * 0.99) {
+                    signals.push({ type: 'bullish', label: 'Near 3M High (Breakout Watch)' });
+                } else if (price <= fib.low * 1.01) {
+                    signals.push({ type: 'bearish', label: 'Near 3M Low (Breakdown Risk)' });
+                }
+            }
+            
+            if (signals.length === 0) {
+                signals.push({ type: 'neutral', label: 'Neutral - No clear signals' });
+            }
+            
+            return signals;
+        }
+
+        function showTADeepDive(ticker) {
+            const taDiv = document.getElementById('taDeepDive');
+            const symbolSpan = document.getElementById('taSymbol');
+            
+            symbolSpan.textContent = ticker;
+            taDiv.classList.remove('hidden');
+            taDiv.scrollIntoView({ behavior: 'smooth' });
+            
+            // Populate signal summary
+            const data = tickerData[ticker] || {};
+            const signals = calculateSignals(data);
+            const summaryDiv = document.getElementById('signalSummary');
+            
+            summaryDiv.innerHTML = signals.map(s => `
+                <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                    <span class="signal-badge signal-${s.type}">${s.label}</span>
+                </div>
+            `).join('');
+            
+            // Create multi-timeframe chart (placeholder - would need actual historical data)
+            createMultiTFChart(ticker);
+        }
+
+        function createMultiTFChart(ticker) {
+            const ctx = document.getElementById('chartMultiTF');
+            if (!ctx) return;
+            
+            // Destroy existing chart if any
+            if (window.mtfChart) {
+                window.mtfChart.destroy();
+            }
+            
+            // Get actual performance data from ticker
+            const data = tickerData[ticker] || {};
+            const returns = {
+                '1D': data.return1D || data.changePercent || 0,
+                '5D': data.return5D || 0,
+                '1M': data.return1M || 0,
+                '3M': data.return3M || 0,
+                '6M': data.return6M || 0,
+                '1Y': data.return1Y || 0
+            };
+            
+            const labels = Object.keys(returns);
+            const values = Object.values(returns);
+            
+            window.mtfChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Return %',
+                        data: values,
+                        backgroundColor: values.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
+                        borderColor: values.map(v => v >= 0 ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'),
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.parsed.y.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function formatVolume(vol) {
+            if (!vol) return '--';
+            if (vol >= 1e9) return (vol / 1e9).toFixed(2) + 'B';
+            if (vol >= 1e6) return (vol / 1e6).toFixed(2) + 'M';
+            if (vol >= 1e3) return (vol / 1e3).toFixed(2) + 'K';
+            return vol.toString();
+        }
+
+        function updateDataFreshness(timestamp) {
+            const freshnessDiv = document.getElementById('dataFreshness');
+            if (!timestamp) {
+                freshnessDiv.classList.add('hidden');
+                return;
+            }
+            
+            const now = new Date();
+            const dataTime = new Date(timestamp);
+            const ageMinutes = (now - dataTime) / 1000 / 60;
+            
+            freshnessDiv.classList.remove('hidden');
+            
+            if (ageMinutes < 30) {
+                // Fresh data (< 30 min)
+                freshnessDiv.className = 'text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
+                freshnessDiv.textContent = '🟢 Fresh';
+            } else if (ageMinutes < 120) {
+                // Recent data (30 min - 2 hours)
+                freshnessDiv.className = 'text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700';
+                freshnessDiv.textContent = '🟡 Recent';
+            } else {
+                // Stale data (> 2 hours)
+                freshnessDiv.className = 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700';
+                freshnessDiv.textContent = '🔴 Stale';
+            }
+        }
+
+        // Claude Analysis Feature
+        const btnClaudeAnalysis = document.getElementById('btnClaudeAnalysis');
+        const btnCloseAnalysis = document.getElementById('btnCloseAnalysis');
+        const claudeAnalysisPanel = document.getElementById('claudeAnalysisPanel');
+        const claudeAnalysisContent = document.getElementById('claudeAnalysisContent');
+        const analysisTimestamp = document.getElementById('analysisTimestamp');
+
+        /* ====================================================================
+         * Verdict Engine v3 — two-axis (momentum vs mean-reversion) scorer.
+         * Replaces the original additive scorer. Key improvements:
+         *   (a) Momentum and mean-reversion are scored on SEPARATE axes and
+         *       reconciled via a trend×stretch matrix — so "oversold inside a
+         *       downtrend" reads as a falling knife, not a buy.
+         *   (b) 52-week range and Fib blocks are sanity-checked against price;
+         *       impossible/garbage ranges are rejected instead of scored.
+         *   (c) Any >=10% single-day move is gated to "REVIEW — CATALYST",
+         *       since a double-digit day reflects news price-only TA can't read.
+         *   Analyst consensus + yield are a CONTEXT axis that can tint a note
+         *   but never flip direction (sentiment lags price on bad news).
+         * Returns the legacy fields (ticker, data, metadata, score, reasons,
+         * verdict, verdictColor, badgeBg) plus new ones, so existing
+         * sort-by-|score| and rendering code keeps working.
+         * ================================================================== */
+        const VERDICT_CFG = {
+            rsiOversold: 30,
+            rsiOverbought: 70,
+            strongMomentum3M: 15,
+            rangeHotZone: 0.90,
+            rangeColdZone: 0.10,
+            catalystDayMovePct: 10,
+            maxSaneHiLoRatio: 12,
+            priceRangeTolerance: 0.02,
+            bullishAnalystPct: 70,
+            bearishAnalystPct: 30,
+            highYield: 4.0,
+        };
+
+        function checkDataQuality(data) {
+            const w = { rangeUsable: true, fibUsable: true, valid: true, warnings: [] };
+            const { price, week52High: hi, week52Low: lo } = data;
+
+            if (price == null || !(price > 0)) {
+                w.valid = false;
+                w.warnings.push('No usable price — ticker cannot be scored.');
+                return w;
+            }
+
+            if (hi != null && lo != null) {
+                const tol = VERDICT_CFG.priceRangeTolerance;
+                if (!(hi > lo)) {
+                    w.rangeUsable = false;
+                    w.warnings.push(`52-week range invalid (high ${hi} ≤ low ${lo}) — range signals disabled.`);
+                } else if (hi / lo > VERDICT_CFG.maxSaneHiLoRatio) {
+                    w.rangeUsable = false;
+                    w.warnings.push(`52-week high/low ratio ${(hi / lo).toFixed(0)}x is implausible — likely mixed listings/currencies. Range signals disabled.`);
+                } else if (price < lo * (1 - tol)) {
+                    w.rangeUsable = false;
+                    w.warnings.push(`Price $${price} is below the stated 52-week low $${lo} — impossible. Range signals disabled.`);
+                } else if (price > hi * (1 + tol)) {
+                    w.rangeUsable = false;
+                    w.warnings.push(`Price $${price} is above the stated 52-week high $${hi} — stale/wrong range. Range signals disabled.`);
+                }
+            } else {
+                w.rangeUsable = false;
+            }
+
+            const fib = data.fib3M;
+            if (fib && fib.high != null && fib.low != null && fib.high > fib.low) {
+                if (price < fib.low * 0.5 || price > fib.high * 1.5) {
+                    w.fibUsable = false;
+                    w.warnings.push('Fibonacci swing does not bracket current price — Fib signals disabled.');
+                }
+            } else {
+                w.fibUsable = false;
+            }
+
+            return w;
+        }
+
+        function detectCatalyst(data) {
+            let dayPct = (data.changePercent != null) ? data.changePercent : null;
+            if ((dayPct == null || dayPct === 0) &&
+                data.previousClose != null && data.previousClose > 0 && data.price != null) {
+                dayPct = (data.price - data.previousClose) / data.previousClose * 100;
+            }
+            const magnitude = (dayPct != null) ? Math.abs(dayPct) : 0;
+            return {
+                isCatalyst: magnitude >= VERDICT_CFG.catalystDayMovePct,
+                dayPct,
+                magnitude,
+            };
+        }
+
+        function scoreMomentum(data, dq) {
+            let s = 0;
+            const reasons = [];
+
+            if (data.sma50 && data.sma200 && data.price) {
+                if (data.sma50 > data.sma200 && data.price > data.sma50) {
+                    s += 2; reasons.push('Golden-cross structure, price above the 50-day SMA — trend up.');
+                } else if (data.sma50 < data.sma200 && data.price < data.sma50) {
+                    s -= 2; reasons.push('Death-cross structure, price below the 50-day SMA — trend down.');
+                } else if (data.price < data.sma50) {
+                    s -= 1; reasons.push('Price below its 50-day SMA — short-term trend weak.');
+                } else if (data.price > data.sma50) {
+                    s += 1; reasons.push('Price above its 50-day SMA — short-term trend firm.');
+                }
+            }
+            if (data.sma200 && data.price) {
+                if (data.price > data.sma200) s += 1;
+                else { s -= 1; reasons.push('Trading below the 200-day SMA — primary trend down.'); }
+            }
+
+            if (data.return3M != null) {
+                if (data.return3M > VERDICT_CFG.strongMomentum3M) {
+                    s += 1; reasons.push(`Strong 3-month momentum (+${data.return3M.toFixed(1)}%).`);
+                } else if (data.return3M < -VERDICT_CFG.strongMomentum3M) {
+                    s -= 1; reasons.push(`Weak 3-month trend (${data.return3M.toFixed(1)}%).`);
+                }
+            }
+
+            if (dq.rangeUsable && data.week52High && data.week52Low && data.price) {
+                const pos = (data.price - data.week52Low) / (data.week52High - data.week52Low);
+                if (pos > VERDICT_CFG.rangeHotZone) {
+                    s += 1; reasons.push(`Near its 52-week high (${(pos * 100).toFixed(0)}% of range) — momentum strong.`);
+                } else if (pos < VERDICT_CFG.rangeColdZone) {
+                    s -= 1; reasons.push(`Near its 52-week low (${(pos * 100).toFixed(0)}% of range) — momentum broken.`);
+                }
+            }
+
+            return { score: s, reasons };
+        }
+
+        function scoreReversion(data, dq) {
+            let s = 0;
+            const reasons = [];
+
+            if (data.rsi != null) {
+                if (data.rsi < VERDICT_CFG.rsiOversold) {
+                    s += 2; reasons.push(`RSI ${data.rsi.toFixed(0)} — oversold (stretched to the downside).`);
+                } else if (data.rsi > VERDICT_CFG.rsiOverbought) {
+                    s -= 2; reasons.push(`RSI ${data.rsi.toFixed(0)} — overbought (stretched to the upside).`);
+                }
+            }
+
+            if (dq.fibUsable && data.fib3M && data.price) {
+                const fib = data.fib3M;
+                const tol = (fib.range || 0) * 0.01;
+                if (fib.fib618 != null && Math.abs(data.price - fib.fib618) < tol) {
+                    s += 1; reasons.push('Sitting on the 61.8% golden-Fib support — mean-reversion zone.');
+                } else if (fib.fib786 != null && data.price < fib.fib786) {
+                    s += 1; reasons.push('Below the 78.6% Fib — deeply retraced (stretched down).');
+                }
+            }
+
+            return { score: s, reasons };
+        }
+
+        function scoreContext(data) {
+            let s = 0;
+            const reasons = [];
+
+            if (data.recommendations) {
+                const r = data.recommendations;
+                const total = (r.strongBuy || 0) + (r.buy || 0) + (r.hold || 0) + (r.sell || 0) + (r.strongSell || 0);
+                if (total > 0) {
+                    const bull = ((r.strongBuy || 0) + (r.buy || 0)) / total * 100;
+                    if (bull > VERDICT_CFG.bullishAnalystPct) {
+                        s += 1; reasons.push(`Analyst consensus bullish (${bull.toFixed(0)}% buy-rated).`);
+                    } else if (bull < VERDICT_CFG.bearishAnalystPct) {
+                        s -= 1; reasons.push(`Analyst consensus weak (${bull.toFixed(0)}% buy-rated).`);
+                    }
+                }
+            }
+            if (data.dividendYield && data.dividendYield > VERDICT_CFG.highYield) {
+                reasons.push(`Yields ${data.dividendYield.toFixed(2)}% — but an unusually high yield can also signal distress; verify coverage.`);
+            }
+            if (data.volume && data.avgVolume && data.volume > data.avgVolume * 2) {
+                reasons.push('Volume 2x+ average — conviction (or a news event) behind the move.');
+            }
+
+            return { score: Math.max(-1, Math.min(1, s)), reasons };
+        }
+
+        function reconcile(mom, rev, ctx) {
+            const trend = mom >= 2 ? 'up_strong'
+                        : mom >= 1 ? 'up'
+                        : mom <= -2 ? 'down_strong'
+                        : mom <= -1 ? 'down'
+                        : 'flat';
+            const stretch = rev >= 1 ? 'oversold'
+                          : rev <= -1 ? 'overbought'
+                          : 'neutral';
+
+            const up = trend === 'up' || trend === 'up_strong';
+            const down = trend === 'down' || trend === 'down_strong';
+
+            let verdict, tone, line;
+
+            if (up && stretch === 'oversold') {
+                verdict = 'BUY'; tone = 'bull';
+                line = 'Oversold pullback inside an uptrend — the textbook buy-the-dip setup.';
+            } else if (up && stretch === 'neutral') {
+                verdict = 'ACCUMULATE'; tone = 'bull';
+                line = 'Uptrend intact, not stretched — add on weakness.';
+            } else if (up && stretch === 'overbought') {
+                verdict = 'HOLD'; tone = 'neutral';
+                line = 'Uptrend but overbought — let it run; don’t chase here.';
+            } else if (trend === 'flat' && stretch === 'oversold') {
+                verdict = 'SPECULATIVE BOUNCE'; tone = 'neutral';
+                line = 'Oversold with no trend support — mean-reversion trade only, size small.';
+            } else if (trend === 'flat' && stretch === 'neutral') {
+                verdict = 'HOLD'; tone = 'neutral';
+                line = 'No clear trend, not stretched — no edge either way.';
+            } else if (trend === 'flat' && stretch === 'overbought') {
+                verdict = 'TRIM'; tone = 'bear';
+                line = 'Overbought with no trend to support it — fade the spike.';
+            } else if (down && stretch === 'oversold') {
+                verdict = 'AVOID — FALLING KNIFE'; tone = 'bear';
+                line = 'Oversold but the trend is DOWN — oversold can stay oversold; not a buy.';
+            } else if (down && stretch === 'neutral') {
+                verdict = 'REDUCE'; tone = 'bear';
+                line = 'Downtrend intact — reduce into strength.';
+            } else if (down && stretch === 'overbought') {
+                verdict = 'TRIM'; tone = 'bear';
+                line = 'Bearish trend with an overbought bounce — a spot to sell into.';
+            } else {
+                verdict = 'HOLD'; tone = 'neutral';
+                line = 'Mixed signals — no decisive read.';
+            }
+
+            let ctxNote = '';
+            if (tone === 'bear' && ctx >= 1) {
+                ctxNote = ' Analysts still bullish — watch for stabilization before acting, but sentiment is not confirming the tape.';
+            } else if (tone === 'bull' && ctx <= -1) {
+                ctxNote = ' Note: analyst sentiment is weak despite the constructive chart.';
+            }
+
+            return { verdict, tone, trend, stretch, rationale: line + ctxNote };
+        }
+
+        // Drop-in replacement for the original buildTickerVerdict(ticker, data).
+        function buildTickerVerdict(ticker, data) {
+            const metadata = (CONFIG.metadata && CONFIG.metadata[ticker]) || {};
+
+            const TONE_STYLE = {
+                bull:    { color: '#059669', badgeBg: 'bg-green-50 border-green-500' },
+                bear:    { color: '#dc2626', badgeBg: 'bg-red-50 border-red-500' },
+                neutral: { color: '#6b7280', badgeBg: 'bg-gray-50 border-gray-400' },
+                review:  { color: '#d97706', badgeBg: 'bg-yellow-50 border-yellow-500' },
+                suspect: { color: '#7c3aed', badgeBg: 'bg-purple-50 border-purple-500' },
+            };
+
+            const dq = checkDataQuality(data);
+            const cat = detectCatalyst(data);
+
+            const mom = scoreMomentum(data, dq);
+            const rev = scoreReversion(data, dq);
+            const ctx = scoreContext(data);
+
+            const momentumScore = mom.score;
+            const reversionScore = rev.score;
+            const contextScore = ctx.score;
+            const reasons = [...mom.reasons, ...rev.reasons, ...ctx.reasons];
+            const flags = [];
+
+            function pack(verdict, tone, rationale, reasonList, extra = {}) {
+                const style = TONE_STYLE[tone] || TONE_STYLE.neutral;
+                return {
+                    ticker, data, metadata,
+                    verdict,
+                    tone,
+                    verdictColor: style.color,
+                    badgeBg: style.badgeBg,
+                    rationale,
+                    reasons: reasonList,
+                    flags,
+                    dataQuality: dq,
+                    catalyst: cat,
+                    momentumScore,
+                    reversionScore,
+                    contextScore,
+                    score: momentumScore + reversionScore, // legacy sort key
+                    ...extra,
+                };
+            }
+
+            // GATE 1: unscoreable / suspect data wins over everything.
+            if (!dq.valid) {
+                return pack('DATA SUSPECT — MANUAL CHECK', 'suspect', dq.warnings.join(' '), reasons);
+            }
+
+            // GATE 2: >=10% single-day move => force human catalyst review.
+            if (cat.isCatalyst) {
+                flags.push(`Single-day move ${cat.dayPct >= 0 ? '+' : ''}${cat.dayPct.toFixed(1)}% — exceeds ±${VERDICT_CFG.catalystDayMovePct}% catalyst threshold.`);
+                const tech = reconcile(momentumScore, reversionScore, contextScore);
+                const rationale =
+                    `A ${Math.abs(cat.dayPct).toFixed(1)}% day almost always reflects news (earnings, guidance, M&A, FDA, a short report) that price-only TA can't interpret. ` +
+                    `Underlying technical read is "${tech.verdict}" (${tech.rationale}) — but do NOT act on it until the catalyst is identified.`;
+                return pack('REVIEW — CATALYST', 'review', rationale, reasons);
+            }
+
+            // Normal path: reconcile the two technical axes.
+            const rec = reconcile(momentumScore, reversionScore, contextScore);
+            if (dq.warnings.length) flags.push(...dq.warnings);
+
+            return pack(rec.verdict, rec.tone, rec.rationale, reasons,
+                        { trend: rec.trend, stretch: rec.stretch });
+        }
+
+        // Generate the full analysis report from whatever is currently in tickerData.
+        function generateAnalysisReport() {
+            const portfolioOnly = CONFIG.portfolio_tickers
+                .filter(t => tickerData[t] && tickerData[t].price)
+                .map(t => buildTickerVerdict(t, tickerData[t]));
+
+            if (portfolioOnly.length === 0) {
+                return `
+                    <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                        No usable ticker data was found in your uploaded files. Make sure your JSON files
+                        contain Finnhub quote data (price/change) and try again.
+                    </div>
+                `;
+            }
+
+            // Rank by |score| descending — most significant signals first
+            const ranked = [...portfolioOnly].sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+            const topMovers = ranked.slice(0, 5);
+            const rest = ranked.slice(5);
+
+            // Market environment from context tickers actually present
+            const spy = tickerData['SPY'];
+            const vix = tickerData['VIX'];
+            let envHtml = '';
+            if (spy && vix && spy.changePct !== undefined && vix.price !== undefined) {
+                let label, sub;
+                if (vix.price < 17 && spy.changePct > 0) {
+                    label = '🟢 Market Environment: RISK-ON';
+                    sub = `VIX at ${vix.price.toFixed(2)} (low volatility), SPY ${spy.changePct >= 0 ? '+' : ''}${spy.changePct.toFixed(2)}% — momentum favors risk assets.`;
+                } else if (vix.price > 25 || spy.changePct < -1) {
+                    label = '🔴 Market Environment: RISK-OFF';
+                    sub = `VIX at ${vix.price.toFixed(2)} (elevated), SPY ${spy.changePct >= 0 ? '+' : ''}${spy.changePct.toFixed(2)}% — defensive positioning warranted.`;
+                } else {
+                    label = '🟡 Market Environment: NEUTRAL';
+                    sub = `VIX at ${vix.price.toFixed(2)}, SPY ${spy.changePct >= 0 ? '+' : ''}${spy.changePct.toFixed(2)}% — mixed signals, no strong directional bias.`;
+                }
+                envHtml = `
+                    <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 class="font-semibold text-blue-900 mb-2">${label}</h4>
+                        <p class="text-sm text-blue-800">${sub}</p>
+                    </div>
+                `;
+            } else {
+                envHtml = `
+                    <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <p class="text-sm text-gray-600">Market context (SPY/VIX) not available in uploaded files — environment classification skipped.</p>
+                    </div>
+                `;
+            }
+
+            // Top priority action cards
+            const topCardsHtml = topMovers.map(v => {
+                const d = v.data;
+                const emoji = v.tone === 'bull' ? '🟢'
+                            : v.tone === 'bear' ? '🔴'
+                            : v.tone === 'review' ? '🟠'
+                            : v.tone === 'suspect' ? '🟣'
+                            : '🟡';
+                const rationaleHtml = v.rationale
+                    ? `<p class="text-sm mt-2 font-medium text-gray-800">${v.rationale}</p>`
+                    : '';
+                const reasonsHtml = v.reasons.length > 0
+                    ? `<p class="text-sm mt-2 text-gray-600">${v.reasons.join(' ')}</p>`
+                    : `<p class="text-sm mt-2 text-gray-500">No strong technical signals — data is mixed or limited.</p>`;
+                const flagsHtml = (v.flags && v.flags.length > 0)
+                    ? `<div class="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">${v.flags.map(f => '⚑ ' + f).join('<br>')}</div>`
+                    : '';
+                return `
+                    <div class="mb-5 p-4 ${v.badgeBg} rounded-lg border-l-4">
+                        <h4 class="font-bold text-gray-900">${emoji} ${v.ticker}${d.companyName ? ' (' + d.companyName + ')' : ''} - <span style="color: ${v.verdictColor};">${v.verdict}</span></h4>
+                        <p class="text-sm mt-2"><strong>Price:</strong> $${d.price?.toFixed(2) || '--'} (${d.changePercent >= 0 ? '+' : ''}${d.changePercent?.toFixed(2) || '--'}%)${d.rsi ? ` | <strong>RSI:</strong> ${d.rsi.toFixed(1)}` : ''}${(v.momentumScore !== undefined) ? ` | <strong>Trend/Stretch:</strong> ${v.momentumScore}/${v.reversionScore}` : ''}</p>
+                        ${rationaleHtml}
+                        ${reasonsHtml}
+                        ${flagsHtml}
+                    </div>
+                `;
+            }).join('');
+
+            // Remaining holdings — compact grid
+            const restHtml = rest.length > 0 ? `
+                <h3 class="text-lg font-bold text-gray-900 mb-3 mt-8">Other Holdings — Quick Status</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    ${rest.map(v => `
+                        <div class="p-3 bg-white border border-gray-200 rounded">
+                            <strong>${v.ticker}:</strong> <span style="color: ${v.verdictColor};">${v.verdict}</span>
+                            <p class="text-xs text-gray-600 mt-1">${v.rationale || (v.reasons.length > 0 ? v.reasons.slice(0, 2).join(' ') : 'No strong signals in current data.')}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            // Risk alerts — bearish names, catalyst-review names, data-suspect names, + concentration
+            const bearish = ranked.filter(v => v.tone === 'bear');
+            const needsReview = ranked.filter(v => v.verdict === 'REVIEW — CATALYST' || v.tone === 'suspect');
+            const biotechTickers = portfolioOnly.filter(v => v.metadata.biotech);
+            const riskItems = [];
+            needsReview.forEach(v => riskItems.push(`${v.ticker} — ${v.verdict}: ${(v.flags && v.flags[0]) || v.rationale || 'needs manual check'}`));
+            bearish.forEach(v => riskItems.push(`${v.ticker} — ${v.verdict}: ${v.rationale || v.reasons[0] || 'bearish signal'}`));
+            if (biotechTickers.length > 0) {
+                riskItems.push(`Biotech exposure: ${biotechTickers.length} of ${portfolioOnly.length} holdings tracked are biotech (${biotechTickers.map(v => v.ticker).join(', ')}) — watch sector concentration`);
+            }
+            const riskHtml = riskItems.length > 0 ? `
+                <h3 class="text-lg font-bold text-gray-900 mb-3 mt-8">⚠️ Risk Alerts</h3>
+                <div class="p-3 bg-red-50 border-l-4 border-red-500">
+                    <ul class="text-sm text-red-600 ml-4 list-disc space-y-1">
+                        ${riskItems.map(r => `<li>${r}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
+            // Data freshness disclosure — pull from actual upload timestamps, not assumed
+            const dataNote = `
+                <div class="mt-4 p-3 bg-blue-50 rounded text-xs text-blue-700">
+                    <strong>Note:</strong> This analysis is calculated live from your currently uploaded JSON files
+                    (${portfolioOnly.length} of ${CONFIG.portfolio_tickers.length} portfolio tickers had usable data).
+                    It reflects whatever price/technical data was present in those files at the time of upload —
+                    re-upload fresh files for an updated read.
+                </div>
+            `;
+
+            return `
+                <div style="line-height: 1.7; font-size: 0.95rem;">
+                    ${envHtml}
+                    <h3 class="text-lg font-bold text-gray-900 mb-3 mt-6">Top Priority Actions</h3>
+                    ${topCardsHtml}
+                    ${restHtml}
+                    ${riskHtml}
+                    ${dataNote}
+                </div>
+            `;
+        }
+
+        btnClaudeAnalysis.addEventListener('click', async () => {
+            if (Object.keys(tickerData).length === 0) {
+                alert('Please upload your JSON files first before viewing the analysis report.');
+                return;
+            }
+
+            // Show panel with loading state
+            claudeAnalysisPanel.classList.remove('hidden');
+            claudeAnalysisContent.innerHTML = `
+                <div class="flex items-center justify-center py-8">
+                    <div class="loading-spinner mr-3"></div>
+                    <span class="text-gray-600">Analyzing your uploaded data...</span>
+                </div>
+            `;
+
+            // Scroll to panel
+            claudeAnalysisPanel.scrollIntoView({ behavior: 'smooth' });
+
+            // Brief delay for UX only — the report itself is computed below, live
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Timestamp reflects when this report was actually generated
+            const now = new Date();
+            const timeStr = now.toLocaleString('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+            analysisTimestamp.textContent = `Generated: ${timeStr} ET — from your uploaded data`;
+
+            claudeAnalysisContent.innerHTML = generateAnalysisReport();
+        });
+
+        btnCloseAnalysis.addEventListener('click', () => {
+            claudeAnalysisPanel.classList.add('hidden');
+        });
+
+        // Export to GitHub
+        btnExport.addEventListener('click', async () => {
+            const githubConfig = getGithubConfig();
+
+            if (!githubConfig) {
+                alert('No GitHub export settings found yet. Opening Settings — enter your repo and personal access token, then click Export again.');
+                openGithubSettingsModal();
+                return;
+            }
+
+            const confirmed = confirm(`Export this dashboard as an HTML report to ${githubConfig.repo}?`);
+            if (!confirmed) return;
+
+            // Capture the live page, then redact anything that could leak the token —
+            // e.g. if the settings modal was left open with the token visibly filled in.
+            const html = document.documentElement.outerHTML
+                .replaceAll(githubConfig.token, '[REDACTED]');
+
+            const date = new Date().toISOString().split('T')[0];
+            const filename = `${date}-portfolio-dashboard.html`;
+            const contentsUrl = `https://api.github.com/repos/${githubConfig.repo}/contents/${githubConfig.path}/${filename}`;
+            
+            try {
+                // Check if a file with this name already exists today (e.g. from a prior export).
+                // The GitHub Contents API requires the existing file's `sha` to overwrite it —
+                // without this, a second export on the same day fails with a 422 error.
+                let existingSha = null;
+                const existingRes = await fetch(
+                    `${contentsUrl}?ref=${githubConfig.branch}`,
+                    {
+                        headers: { 'Authorization': `token ${githubConfig.token}` }
+                    }
+                );
+
+                if (existingRes.status === 200) {
+                    const existingData = await existingRes.json();
+                    existingSha = existingData.sha;
+                } else if (existingRes.status === 401) {
+                    throw new Error('GitHub rejected your token (401 Unauthorized). Check it in ⚙️ Settings.');
+                } else if (existingRes.status !== 404) {
+                    // Anything other than "found" or "not found" is unexpected (auth, rate limit, etc.)
+                    const errBody = await existingRes.text();
+                    throw new Error(`Lookup failed (${existingRes.status}): ${errBody}`);
+                }
+
+                const putBody = {
+                    message: existingSha
+                        ? `Portfolio Sentinel Dashboard - ${date} (update)`
+                        : `Portfolio Sentinel Dashboard - ${date}`,
+                    content: btoa(unescape(encodeURIComponent(html))),
+                    branch: githubConfig.branch
+                };
+                if (existingSha) {
+                    putBody.sha = existingSha;
+                }
+
+                // Create or update the file in the GitHub repo
+                const response = await fetch(
+                    contentsUrl,
+                    {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${githubConfig.token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(putBody)
+                    }
+                );
+                
+                if (response.ok) {
+                    alert(existingSha
+                        ? `✓ Dashboard updated on GitHub (${filename})!`
+                        : `✓ Dashboard exported to GitHub (${filename})!`);
+                } else {
+                    const errBody = await response.text();
+                    throw new Error(`GitHub API error (${response.status}): ${errBody}`);
+                }
+            } catch (err) {
+                console.error('Export error:', err);
+                alert(`Failed to export to GitHub.\n${err.message}\nCheck console for details.`);
+            }
+        });
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            updateLastUpdateTime();
+            
+            // Pre-populate market indices with latest data (May 22-23, 2026)
+            const marketIndices = {
+                'SPY': { price: 745.70, change: 2.98, changePct: 0.40 },
+                'QQQ': { price: 717.54, change: 3.03, changePct: 0.42 },
+                'IWM': { price: 247.45, change: 2.00, changePct: 0.81 },
+                'VIX': { price: 16.70, change: -0.06, changePct: -0.36 }
+            };
+            
+            // Update market context cards
+            for (const [symbol, data] of Object.entries(marketIndices)) {
+                const card = document.getElementById(`${symbol.toLowerCase()}Card`);
+                if (card) {
+                    const priceDiv = card.querySelector('.text-2xl');
+                    const changeDiv = card.querySelector('.text-sm.mt-1');
+                    
+                    priceDiv.textContent = `$${data.price.toFixed(2)}`;
+                    
+                    const color = data.changePct >= 0 ? 'text-green-600' : 'text-red-600';
+                    changeDiv.className = `text-sm mt-1 font-semibold ${color}`;
+                    changeDiv.textContent = `${data.changePct >= 0 ? '+' : ''}${data.changePct.toFixed(2)}%`;
+                }
+            }
+            
+            // Determine market environment
+            const spy = marketIndices['SPY'];
+            const vix = marketIndices['VIX'];
+            const envDiv = document.getElementById('envStatus');
+            
+            let environment = '';
+            if (vix.price < 17 && spy.changePct > 0) {
+                environment = '🟢 Risk-On (Low VIX, positive momentum)';
+                envDiv.parentElement.className = 'mt-4 p-4 bg-green-50 rounded-lg';
+            } else if (vix.price > 25 || spy.changePct < -1) {
+                environment = '🔴 Risk-Off (Elevated VIX, negative momentum)';
+                envDiv.parentElement.className = 'mt-4 p-4 bg-red-50 rounded-lg';
+            } else {
+                environment = '🟡 Neutral (Mixed signals)';
+                envDiv.parentElement.className = 'mt-4 p-4 bg-yellow-50 rounded-lg';
+            }
+            envDiv.textContent = environment;
+        });
+    </script>
+</body>
+</html>
